@@ -21,4 +21,13 @@ pub fn main() !void {
     if (r2 >= 0) {
         std.log.info("Our bus name: {s}", .{unique_name});
     }
+
+    const r3 = c.sd_bus_request_name(bus, "org.freedesktop.Notifications", 0);
+    if (r3 < 0) {
+        std.log.err("Failed to request bus name(is another daemon running?): {d}", .{r3});
+        return error.RequestNameFailed;
+    }
+    defer _ = c.sd_bus_release_name(bus, "org.freedesktop.Notifications");
+
+    std.log.info("Claimed org.freedesktop.Notifications", .{});
 }
