@@ -18,6 +18,9 @@ pub fn build(b: *std.Build) void {
     exe.addIncludePath(.{ .cwd_relative = "/usr/include" });
     exe.linkLibC();
 
+    exe.addCSourceFile(.{ .file = b.path("src/vtable.c"), .flags = &.{ "-Wno-builtin-macro-redefined", "-I/usr/include" } });
+    exe.addIncludePath(.{ .cwd_relative = "src" });
+
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
