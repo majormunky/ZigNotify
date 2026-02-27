@@ -74,31 +74,28 @@ export fn handle_notify(
     r = c.sd_bus_message_read(msg, "i", &timeout);
     if (r < 0) return r;
 
-    if (state_mod.global_state) |state| {
-        if (state.surface) |*surf| {
-            wayland.drawSurface(
-                state.display,
-                state.globals,
-                surf,
-                std.mem.sliceTo(summary, 0),
-                std.mem.sliceTo(body, 0),
-            ) catch |err| {
-                std.log.err("drawSurface failed: {any}", .{err});
-            };
-        }
-    }
-
     // return a notification id
     const id = next_notification_id;
     next_notification_id +%= 1;
     if (next_notification_id == 0) next_notification_id = 1;
 
     if (state_mod.global_state) |state| {
-        state.active = .{
-            .id = id,
-            .created_at = std.time.milliTimestamp(),
-            .timeout_ms = timeout,
+        const y_offset = state.count() * 110;
+        const surf = wayland.createSurface(state.display, state.globals, @intCast(y_offset)) catch |err| {
+            std.log.err("createSurface failed: {any}", .{err});
+            return -1;
         };
+
+        wayland.drawSurface(
+            state.display,
+            state.globals,
+            @constCast(&surf),
+            std.mem.sliceTo(summary, 0),
+            std.mem.sliceTo(body, 0),
+        ) catch |err| {
+            std.log.err("drawSurface failed: {any}", .{err});
+        };
+        state.addNotification(id, timeout, surf);
     }
 
     std.log.info("Notify: id={d} app={s} summary={s} body={s} timeout={d}", .{ id, app_name, summary, body, timeout });
@@ -124,35 +121,31 @@ export fn handle_close_notification(
 
 fn checkExpiry() void {
     const state = state_mod.global_state orelse return;
-    const active = state.active orelse return;
-
-    // timeout -1 means server default, 0 means never expire
-    const effective_timeout: i32 = if (active.timeout_ms <= 0) 5000 else active.timeout_ms;
     const now = std.time.milliTimestamp();
 
-    if (now - active.created_at >= effective_timeout) {
-        std.log.info("Notification {d} expired, dismissing", .{active.id});
-        const id = active.id;
-        state.active = null;
+    for (&state.active) |*slot| {
+        if (slot.*) |*n| {
+            const effective_timeout: i64 = if (n.timeout_ms <= 0) 5000 else n.timeout_ms;
+            if (now - n.created_at >= effective_timeout) {
+                std.log.info("Notification {d} expired", .{n.id});
+                const id = n.id;
 
-        // hide the surface by clearing it
-        if (state.surface) |*surf| {
-            wayland.clearSurface(surf);
-            _ = wayland.c.wl_display_flush(state.display);
+                wayland.destroySurface(&n.surface);
+                _ = wayland.c.wl_display_flush(state.display);
+                slot.* = null;
+
+                const sd_bus: *c.sd_bus = @ptrCast(@alignCast(state.bus));
+                _ = c.sd_bus_emit_signal(
+                    sd_bus,
+                    "/org/freedesktop/Notifications",
+                    "org.freedesktop.Notifications",
+                    "NotificationClosed",
+                    "uu",
+                    id,
+                    @as(u32, 1),
+                );
+            }
         }
-
-        const bus_global: *c.sd_bus = @ptrCast(@alignCast(state.bus));
-
-        // emit notification closed signal
-        _ = c.sd_bus_emit_signal(
-            bus_global,
-            "/org/freedesktop/Notifications",
-            "org.freedesktop.Notifications",
-            "NotificationClosed",
-            "uu",
-            id,
-            @as(u32, 1), // reason 1 = expired
-        );
     }
 }
 
@@ -167,10 +160,6 @@ pub fn main() !void {
     if (globals.layer_shell == null) return error.NoLayerShell;
     std.log.info("All Wayland globals bound", .{});
 
-    var surface = try wayland.createSurface(display, globals);
-
-    try wayland.drawSurface(display, globals, &surface, "zignotify", "ready");
-
     var bus: ?*c.sd_bus = null;
 
     var r = c.sd_bus_open_user(&bus);
@@ -180,12 +169,7 @@ pub fn main() !void {
     }
     defer _ = c.sd_bus_unref(bus);
 
-    var state = state_mod.State{
-        .display = display,
-        .globals = globals,
-        .surface = surface,
-        .bus = bus.?,
-    };
+    var state = state_mod.State.init(display, globals, bus.?);
     state_mod.global_state = &state;
 
     std.log.info("Connected to session bus!", .{});

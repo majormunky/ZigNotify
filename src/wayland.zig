@@ -118,7 +118,7 @@ pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summar
     std.log.info("Surface Drawn!", .{});
 }
 
-pub fn createSurface(display: *c.wl_display, globals: Globals) !Surface {
+pub fn createSurface(display: *c.wl_display, globals: Globals, y_offset: u32) !Surface {
     // create a base wayland surface
     const surface = c.wl_compositor_create_surface(globals.compositor) orelse
         return error.CreateSurfaceFailed;
@@ -128,6 +128,7 @@ pub fn createSurface(display: *c.wl_display, globals: Globals) !Surface {
 
     const width: u32 = 300;
     const height: u32 = 100;
+    const margin: u32 = 10;
 
     // configure the layer surface
     c.zwlr_layer_surface_v1_set_size(layer_surface, width, height);
@@ -135,7 +136,7 @@ pub fn createSurface(display: *c.wl_display, globals: Globals) !Surface {
         layer_surface,
         c.ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | c.ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT,
     );
-    c.zwlr_layer_surface_v1_set_margin(layer_surface, 10, 10, 0, 0);
+    c.zwlr_layer_surface_v1_set_margin(layer_surface, @intCast(margin + y_offset), 10, 0, 0);
 
     var s = Surface{
         .surface = surface,
@@ -153,6 +154,11 @@ pub fn createSurface(display: *c.wl_display, globals: Globals) !Surface {
     _ = c.wl_display_roundtrip(display);
 
     return s;
+}
+
+pub fn destroySurface(s: *Surface) void {
+    c.zwlr_layer_surface_v1_destroy(s.layer_surface);
+    c.wl_surface_destroy(s.surface);
 }
 
 pub fn reconfigureSurface(display: *c.wl_display, s: *Surface) void {
