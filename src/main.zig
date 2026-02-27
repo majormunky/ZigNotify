@@ -4,6 +4,7 @@ const c = @cImport({
     @cInclude("systemd/sd-bus.h");
     @cInclude("vtable.h");
 });
+const wayland = @import("wayland.zig");
 
 var next_notification_id: u32 = 1;
 
@@ -109,6 +110,10 @@ export fn handle_close_notification(
 }
 
 pub fn main() !void {
+    // wayland connect
+    const display = try wayland.connect();
+    defer wayland.disconnect(display);
+
     var bus: ?*c.sd_bus = null;
 
     var r = c.sd_bus_open_user(&bus);

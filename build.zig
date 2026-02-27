@@ -16,6 +16,7 @@ pub fn build(b: *std.Build) void {
     exe.addObjectFile(.{ .cwd_relative = "/usr/lib/libsystemd.so" });
     exe.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
     exe.addIncludePath(.{ .cwd_relative = "/usr/include" });
+    exe.linkSystemLibrary("wayland-client");
     exe.linkLibC();
 
     exe.addCSourceFile(.{ .file = b.path("src/vtable.c"), .flags = &.{ "-Wno-builtin-macro-redefined", "-I/usr/include" } });
