@@ -6,6 +6,7 @@ pub const c = @cImport({
     @cInclude("cairo/cairo.h");
 });
 const posix = std.posix;
+const state_mod = @import("state.zig");
 
 pub const Globals = struct {
     compositor: ?*c.wl_compositor = null,
@@ -27,7 +28,7 @@ pub fn clearSurface(s: *Surface) void {
     s.configured = false;
 }
 
-pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summary: []const u8, body: []const u8) !void {
+pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summary: []const u8, body: []const u8, urgency: state_mod.Urgency) !void {
     const width = s.width;
     const height = s.height;
     const stride = width * 4;
@@ -69,8 +70,14 @@ pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summar
     c.cairo_set_source_rgba(cr, 0.18, 0.18, 0.18, 1.0); // dark gray
     c.cairo_paint(cr);
 
+    // accent color based on urgency
+    switch (urgency) {
+        .low => c.cairo_set_source_rgba(cr, 0.5, 0.5, 0.5, 1.0),
+        .normal => c.cairo_set_source_rgba(cr, 0.27, 0.52, 0.95, 1.0),
+        .critical => c.cairo_set_source_rgba(cr, 0.9, 0.2, 0.2, 1.0),
+    }
+
     // draw a colored left border accent
-    c.cairo_set_source_rgba(cr, 0.27, 0.52, 0.95, 1.0); // blue
     c.cairo_rectangle(cr, 0, 0, 4, @floatFromInt(height));
     c.cairo_fill(cr);
 
@@ -113,7 +120,6 @@ pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summar
     c.wl_surface_damage(s.surface, 0, 0, @intCast(width), @intCast(height));
     c.wl_surface_commit(s.surface);
     _ = c.wl_display_flush(display);
-    _ = c.wl_display_roundtrip(display);
 
     std.log.info("Surface Drawn!", .{});
 }
@@ -151,7 +157,7 @@ pub fn createSurface(display: *c.wl_display, globals: Globals, y_offset: u32) !S
 
     // commit to trigger the configure event
     c.wl_surface_commit(surface);
-    _ = c.wl_display_roundtrip(display);
+    _ = c.wl_display_flush(display);
 
     return s;
 }

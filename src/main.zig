@@ -64,11 +64,31 @@ export fn handle_notify(
     var r = c.sd_bus_message_read(msg, "susss", &app_name, &replaces_id, &app_icon, &summary, &body);
     if (r < 0) return r;
 
-    // skip actions array and hits dict for now
+    // skip actions array
     r = c.sd_bus_message_skip(msg, "as");
     if (r < 0) return r;
-    r = c.sd_bus_message_skip(msg, "a{sv}");
-    if (r < 0) return r;
+
+    var urgency: state_mod.Urgency = .normal;
+    r = c.sd_bus_message_enter_container(msg, 'a', "{sv}");
+    if (r > 0) {
+        while (c.sd_bus_message_enter_container(msg, 'e', "sv") > 0) {
+            var key: [*c]const u8 = null;
+
+            _ = c.sd_bus_message_read_basic(msg, 's', @ptrCast(&key));
+            const key_str = std.mem.sliceTo(key, 0);
+            if (std.mem.eql(u8, key_str, "urgency")) {
+                _ = c.sd_bus_message_enter_container(msg, 'v', "y");
+                var u: u8 = 1;
+                _ = c.sd_bus_message_read_basic(msg, 'y', @ptrCast(&u));
+                urgency = @enumFromInt(@min(u, 2));
+                _ = c.sd_bus_message_exit_container(msg);
+            } else {
+                _ = c.sd_bus_message_skip(msg, "v");
+            }
+            _ = c.sd_bus_message_exit_container(msg);
+        }
+        _ = c.sd_bus_message_exit_container(msg);
+    }
 
     // read timeout
     r = c.sd_bus_message_read(msg, "i", &timeout);
@@ -80,22 +100,13 @@ export fn handle_notify(
     if (next_notification_id == 0) next_notification_id = 1;
 
     if (state_mod.global_state) |state| {
-        const y_offset = state.count() * 110;
-        const surf = wayland.createSurface(state.display, state.globals, @intCast(y_offset)) catch |err| {
-            std.log.err("createSurface failed: {any}", .{err});
-            return -1;
-        };
-
-        wayland.drawSurface(
-            state.display,
-            state.globals,
-            @constCast(&surf),
+        state.addPending(
+            id,
+            timeout,
+            urgency,
             std.mem.sliceTo(summary, 0),
             std.mem.sliceTo(body, 0),
-        ) catch |err| {
-            std.log.err("drawSurface failed: {any}", .{err});
-        };
-        state.addNotification(id, timeout, surf);
+        );
     }
 
     std.log.info("Notify: id={d} app={s} summary={s} body={s} timeout={d}", .{ id, app_name, summary, body, timeout });
@@ -236,6 +247,30 @@ pub fn main() !void {
         if (r > 0) continue;
 
         checkExpiry();
+
+        // dispatch any pending wayland events
+        _ = wayland.c.wl_display_dispatch_pending(state.display);
+        _ = wayland.c.wl_display_flush(state.display);
+
+        // Process pending notifications
+        if (state_mod.global_state) |st| {
+            for (&st.pending) |*sl| {
+                if (sl.*) |p| {
+                    const y_offset = st.count() * 110;
+                    const surf = wayland.createSurface(st.display, st.globals, @intCast(y_offset)) catch continue;
+                    wayland.drawSurface(
+                        st.display,
+                        st.globals,
+                        @constCast(&surf),
+                        p.summary[0..p.summary_len],
+                        p.body[0..p.body_len],
+                        p.urgency,
+                    ) catch continue;
+                    st.addNotification(p.id, p.timeout_ms, p.urgency, surf);
+                    sl.* = null;
+                }
+            }
+        }
 
         r = c.sd_bus_wait(bus, 100 * std.time.us_per_ms);
         if (r < 0) {
