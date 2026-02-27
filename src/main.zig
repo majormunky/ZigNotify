@@ -5,6 +5,8 @@ const c = @cImport({
     @cInclude("vtable.h");
 });
 
+var next_notification_id: u32 = 1;
+
 export fn handle_get_capabilities(
     msg: ?*c.sd_bus_message,
     _: ?*anyopaque,
@@ -80,11 +82,14 @@ export fn handle_notify(
 
     std.log.info("After read timeout", .{});
 
-    std.log.info("Notify: app={s} summary={s} body={s} timeout={d}", .{ app_name, summary, body, timeout });
+    // return a notification id
+    const id = next_notification_id;
+    next_notification_id +%= 1;
+    if (next_notification_id == 0) next_notification_id = 1;
 
-    // return a notification id (just 1 for now)
-    const notification_id: u32 = 1;
-    r = c.sd_bus_reply_method_return(msg, "u", notification_id);
+    std.log.info("Notify: id={d} app={s} summary={s} body={s} timeout={d}", .{ id, app_name, summary, body, timeout });
+
+    r = c.sd_bus_reply_method_return(msg, "u", id);
     return if (r < 0) r else 1;
 }
 
