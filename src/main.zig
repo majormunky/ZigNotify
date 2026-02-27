@@ -88,6 +88,21 @@ export fn handle_notify(
     return if (r < 0) r else 1;
 }
 
+export fn handle_close_notification(
+    msg: ?*c.sd_bus_message,
+    _: ?*anyopaque,
+    _: ?*c.sd_bus_error,
+) callconv(.c) c_int {
+    var id: u32 = 0;
+    var r = c.sd_bus_message_read(msg, "u", &id);
+    if (r < 0) return r;
+
+    std.log.info("CloseNotification id={d}", .{id});
+
+    r = c.sd_bus_reply_method_return(msg, "");
+    return if (r < 0) r else 1;
+}
+
 pub fn main() !void {
     var bus: ?*c.sd_bus = null;
 
