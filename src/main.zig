@@ -115,6 +115,25 @@ export fn handle_close_notification(
 
     std.log.info("CloseNotification id={d}", .{id});
 
+    if (state_mod.global_state) |state| {
+        if (state.removeNotification(id)) |*n| {
+            wayland.destroySurface(@constCast(&n.surface));
+            _ = wayland.c.wl_display_flush(state.display);
+            state.repositionAll();
+
+            const sd_bus: *c.sd_bus = @ptrCast(@alignCast(state.bus));
+            _ = c.sd_bus_emit_signal(
+                sd_bus,
+                "/org/freedesktop/Notifications",
+                "org.freedesktop.Notifications",
+                "NotificationClosed",
+                "uu",
+                id,
+                @as(u32, 1),
+            );
+        }
+    }
+
     r = c.sd_bus_reply_method_return(msg, "");
     return if (r < 0) r else 1;
 }
