@@ -44,6 +44,50 @@ export fn handle_get_server_information(
     return if (r < 0) r else 1;
 }
 
+export fn handle_notify(
+    msg: ?*c.sd_bus_message,
+    _: ?*anyopaque,
+    _: ?*c.sd_bus_error,
+) callconv(.c) c_int {
+    std.log.info("!!!! Handle notify called !!!", .{});
+
+    var app_name: [*c]const u8 = null;
+    var replaces_id: u32 = 0;
+    var app_icon: [*c]const u8 = null;
+    var summary: [*c]const u8 = null;
+    var body: [*c]const u8 = null;
+    var timeout: i32 = -1;
+
+    std.log.info("After variables", .{});
+
+    // read the first 5 args
+    var r = c.sd_bus_message_read(msg, "susss", &app_name, &replaces_id, &app_icon, &summary, &body);
+    if (r < 0) return r;
+
+    std.log.info("After reading 5 variables", .{});
+
+    // skip actions array and hits dict for now
+    r = c.sd_bus_message_skip(msg, "as");
+    if (r < 0) return r;
+    r = c.sd_bus_message_skip(msg, "a{sv}");
+    if (r < 0) return r;
+
+    std.log.info("After skipping actions and hits dict", .{});
+
+    // read timeout
+    r = c.sd_bus_message_read(msg, "i", &timeout);
+    if (r < 0) return r;
+
+    std.log.info("After read timeout", .{});
+
+    std.log.info("Notify: app={s} summary={s} body={s} timeout={d}", .{ app_name, summary, body, timeout });
+
+    // return a notification id (just 1 for now)
+    const notification_id: u32 = 1;
+    r = c.sd_bus_reply_method_return(msg, "u", notification_id);
+    return if (r < 0) r else 1;
+}
+
 pub fn main() !void {
     var bus: ?*c.sd_bus = null;
 
