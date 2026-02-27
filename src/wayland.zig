@@ -156,6 +156,13 @@ pub fn createSurface(display: *c.wl_display, globals: Globals, y_offset: u32) !S
     return s;
 }
 
+pub fn repositionSurface(display: *c.wl_display, s: *Surface, y_offset: u32) void {
+    const margin: u32 = 10;
+    c.zwlr_layer_surface_v1_set_margin(s.layer_surface, @intCast(margin + y_offset), margin, 0, 0);
+    c.wl_surface_commit(s.surface);
+    _ = c.wl_display_roundtrip(display);
+}
+
 pub fn destroySurface(s: *Surface) void {
     c.zwlr_layer_surface_v1_destroy(s.layer_surface);
     c.wl_surface_destroy(s.surface);

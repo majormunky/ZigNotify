@@ -59,6 +59,17 @@ pub const State = struct {
         }
         return n;
     }
+
+    pub fn repositionAll(self: *State) void {
+        var index: u32 = 0;
+        for (&self.active) |*slot| {
+            if (slot.*) |*n| {
+                const y_offset = index * 110;
+                wayland.repositionSurface(self.display, &n.surface, y_offset);
+                index += 1;
+            }
+        }
+    }
 };
 
 pub var global_state: ?*State = null;

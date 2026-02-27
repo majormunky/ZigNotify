@@ -134,6 +134,8 @@ fn checkExpiry() void {
                 _ = wayland.c.wl_display_flush(state.display);
                 slot.* = null;
 
+                state.repositionAll();
+
                 const sd_bus: *c.sd_bus = @ptrCast(@alignCast(state.bus));
                 _ = c.sd_bus_emit_signal(
                     sd_bus,
