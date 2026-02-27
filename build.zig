@@ -17,9 +17,12 @@ pub fn build(b: *std.Build) void {
     exe.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
     exe.addIncludePath(.{ .cwd_relative = "/usr/include" });
     exe.linkSystemLibrary("wayland-client");
+    exe.linkSystemLibrary("cairo");
     exe.linkLibC();
 
     exe.addCSourceFile(.{ .file = b.path("src/vtable.c"), .flags = &.{ "-Wno-builtin-macro-redefined", "-I/usr/include" } });
+    exe.addCSourceFile(.{ .file = b.path("src/wlr-layer-shell-unstable-v1.c"), .flags = &.{ "-Wno-builtin-macro-redefined", "-I/usr/include" } });
+    exe.addCSourceFile(.{ .file = b.path("src/xdg-shell.c"), .flags = &.{ "-Wno-builtin-macro-redefined", "-I/usr/include" } });
     exe.addIncludePath(.{ .cwd_relative = "src" });
 
     b.installArtifact(exe);

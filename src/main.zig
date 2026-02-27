@@ -5,6 +5,7 @@ const c = @cImport({
     @cInclude("vtable.h");
 });
 const wayland = @import("wayland.zig");
+const state_mod = @import("state.zig");
 
 var next_notification_id: u32 = 1;
 
@@ -52,8 +53,6 @@ export fn handle_notify(
     _: ?*anyopaque,
     _: ?*c.sd_bus_error,
 ) callconv(.c) c_int {
-    std.log.info("!!!! Handle notify called !!!", .{});
-
     var app_name: [*c]const u8 = null;
     var replaces_id: u32 = 0;
     var app_icon: [*c]const u8 = null;
@@ -61,13 +60,9 @@ export fn handle_notify(
     var body: [*c]const u8 = null;
     var timeout: i32 = -1;
 
-    std.log.info("After variables", .{});
-
     // read the first 5 args
     var r = c.sd_bus_message_read(msg, "susss", &app_name, &replaces_id, &app_icon, &summary, &body);
     if (r < 0) return r;
-
-    std.log.info("After reading 5 variables", .{});
 
     // skip actions array and hits dict for now
     r = c.sd_bus_message_skip(msg, "as");
@@ -75,18 +70,34 @@ export fn handle_notify(
     r = c.sd_bus_message_skip(msg, "a{sv}");
     if (r < 0) return r;
 
-    std.log.info("After skipping actions and hits dict", .{});
-
     // read timeout
     r = c.sd_bus_message_read(msg, "i", &timeout);
     if (r < 0) return r;
 
-    std.log.info("After read timeout", .{});
+    if (state_mod.global_state) |state| {
+        if (state.surface) |*surf| {
+            wayland.drawSurface(
+                state.display,
+                state.globals,
+                surf,
+                std.mem.sliceTo(summary, 0),
+                std.mem.sliceTo(body, 0),
+            ) catch {};
+        }
+    }
 
     // return a notification id
     const id = next_notification_id;
     next_notification_id +%= 1;
     if (next_notification_id == 0) next_notification_id = 1;
+
+    if (state_mod.global_state) |state| {
+        state.active = .{
+            .id = id,
+            .created_at = std.time.milliTimestamp(),
+            .timeout_ms = timeout,
+        };
+    }
 
     std.log.info("Notify: id={d} app={s} summary={s} body={s} timeout={d}", .{ id, app_name, summary, body, timeout });
 
@@ -109,10 +120,53 @@ export fn handle_close_notification(
     return if (r < 0) r else 1;
 }
 
+fn checkExpiry() void {
+    const state = state_mod.global_state orelse return;
+    const active = state.active orelse return;
+
+    // timeout -1 means server default, 0 means never expire
+    const effective_timeout: i32 = if (active.timeout_ms <= 0) 5000 else active.timeout_ms;
+    const now = std.time.milliTimestamp();
+
+    if (now - active.created_at >= effective_timeout) {
+        std.log.info("Notification {d} expired, dismissing", .{active.id});
+        state.active = null;
+
+        // hide the surface by clearing it
+        if (state.surface) |*surf| {
+            wayland.clearSurface(surf);
+            _ = wayland.c.wl_display_flush(state.display);
+        }
+
+        const bus_global: *c.sd_bus = @ptrCast(@alignCast(state.bus));
+
+        // emit notification closed signal
+        _ = c.sd_bus_emit_signal(
+            bus_global,
+            "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications",
+            "NotificationClosed",
+            "uu",
+            active.id,
+            @as(u32, 1), // reason 1 = expired
+        );
+    }
+}
+
 pub fn main() !void {
     // wayland connect
     const display = try wayland.connect();
     defer wayland.disconnect(display);
+
+    const globals = try wayland.getGlobals(display);
+    if (globals.compositor == null) return error.NoCompositor;
+    if (globals.shm == null) return error.NoShm;
+    if (globals.layer_shell == null) return error.NoLayerShell;
+    std.log.info("All Wayland globals bound", .{});
+
+    var surface = try wayland.createSurface(display, globals);
+
+    try wayland.drawSurface(display, globals, &surface, "zignotify", "ready");
 
     var bus: ?*c.sd_bus = null;
 
@@ -122,6 +176,14 @@ pub fn main() !void {
         return error.BusConnectFailed;
     }
     defer _ = c.sd_bus_unref(bus);
+
+    var state = state_mod.State{
+        .display = display,
+        .globals = globals,
+        .surface = surface,
+        .bus = bus.?,
+    };
+    state_mod.global_state = &state;
 
     std.log.info("Connected to session bus!", .{});
 
@@ -163,10 +225,11 @@ pub fn main() !void {
             std.log.err("Bus process error: {d}", .{r});
             return error.ProcessFailed;
         }
-
         if (r > 0) continue;
 
-        r = c.sd_bus_wait(bus, std.math.maxInt(u64));
+        checkExpiry();
+
+        r = c.sd_bus_wait(bus, 100 * std.time.us_per_ms);
         if (r < 0) {
             std.log.err("Bus wait error: {d}", .{r});
             return error.WaitFailed;
