@@ -24,6 +24,7 @@ pub const Surface = struct {
 pub fn clearSurface(s: *Surface) void {
     c.wl_surface_attach(s.surface, null, 0, 0);
     c.wl_surface_commit(s.surface);
+    s.configured = false;
 }
 
 pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summary: []const u8, body: []const u8) !void {
@@ -31,6 +32,10 @@ pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summar
     const height = s.height;
     const stride = width * 4;
     const size = stride * height;
+
+    if (!s.configured) {
+        reconfigureSurface(display, s);
+    }
 
     // create a shared memory file
     const fd = try posix.memfd_create("zignotify-shm", 0);
@@ -107,6 +112,7 @@ pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summar
     c.wl_surface_attach(s.surface, buffer, 0, 0);
     c.wl_surface_damage(s.surface, 0, 0, @intCast(width), @intCast(height));
     c.wl_surface_commit(s.surface);
+    _ = c.wl_display_flush(display);
     _ = c.wl_display_roundtrip(display);
 
     std.log.info("Surface Drawn!", .{});
@@ -147,6 +153,12 @@ pub fn createSurface(display: *c.wl_display, globals: Globals) !Surface {
     _ = c.wl_display_roundtrip(display);
 
     return s;
+}
+
+pub fn reconfigureSurface(display: *c.wl_display, s: *Surface) void {
+    c.zwlr_layer_surface_v1_set_size(s.layer_surface, s.width, s.height);
+    c.wl_surface_commit(s.surface);
+    _ = c.wl_display_roundtrip(display);
 }
 
 fn layerSurfaceConfigure(

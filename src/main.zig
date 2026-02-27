@@ -82,7 +82,9 @@ export fn handle_notify(
                 surf,
                 std.mem.sliceTo(summary, 0),
                 std.mem.sliceTo(body, 0),
-            ) catch {};
+            ) catch |err| {
+                std.log.err("drawSurface failed: {any}", .{err});
+            };
         }
     }
 
@@ -130,6 +132,7 @@ fn checkExpiry() void {
 
     if (now - active.created_at >= effective_timeout) {
         std.log.info("Notification {d} expired, dismissing", .{active.id});
+        const id = active.id;
         state.active = null;
 
         // hide the surface by clearing it
@@ -147,7 +150,7 @@ fn checkExpiry() void {
             "org.freedesktop.Notifications",
             "NotificationClosed",
             "uu",
-            active.id,
+            id,
             @as(u32, 1), // reason 1 = expired
         );
     }
