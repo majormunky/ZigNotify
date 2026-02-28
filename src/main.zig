@@ -108,6 +108,7 @@ export fn handle_notify(
             urgency,
             std.mem.sliceTo(summary, 0),
             std.mem.sliceTo(body, 0),
+            std.mem.sliceTo(app_name, 0),
         );
     }
 
@@ -284,6 +285,7 @@ pub fn main() !void {
                         @constCast(&surf),
                         p.summary[0..p.summary_len],
                         p.body[0..p.body_len],
+                        p.app_name[0..p.app_name_len],
                         p.urgency,
                         st.config,
                     ) catch continue;

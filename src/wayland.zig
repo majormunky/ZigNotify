@@ -135,7 +135,7 @@ pub fn clearSurface(s: *Surface) void {
     s.configured = false;
 }
 
-pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summary: []const u8, body: []const u8, urgency: state_mod.Urgency, config: @import("config.zig").Config) !void {
+pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summary: []const u8, body: []const u8, app_name: []const u8, urgency: state_mod.Urgency, config: @import("config.zig").Config) !void {
     const width = s.width;
     const height = s.height;
     const stride = width * 4;
@@ -198,18 +198,28 @@ pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summar
     var body_buf: [256:0]u8 = undefined;
     const body_z = std.fmt.bufPrintZ(&body_buf, "{s}", .{body}) catch "...";
 
+    var app_name_buf: [256:0]u8 = undefined;
+    const app_name_buf_z = std.fmt.bufPrintZ(&app_name_buf, "{s}", .{app_name}) catch "...";
+
+    // draw app name
+    c.cairo_set_source_rgba(cr, 0.6, 0.6, 0.6, 1.0); // white
+    c.cairo_select_font_face(cr, "Sans", c.CAIRO_FONT_SLANT_NORMAL, c.CAIRO_FONT_WEIGHT_NORMAL);
+    c.cairo_set_font_size(cr, 10.0);
+    c.cairo_move_to(cr, 14, 14);
+    c.cairo_show_text(cr, app_name_buf_z.ptr);
+
     // draw summary text
     c.cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 1.0); // white
     c.cairo_select_font_face(cr, "Sans", c.CAIRO_FONT_SLANT_NORMAL, c.CAIRO_FONT_WEIGHT_BOLD);
     c.cairo_set_font_size(cr, config.font_size_summary);
-    c.cairo_move_to(cr, 14, 22);
+    c.cairo_move_to(cr, 14, 32);
     c.cairo_show_text(cr, summary_z.ptr);
 
     // draw body text
     c.cairo_select_font_face(cr, "Sans", c.CAIRO_FONT_SLANT_NORMAL, c.CAIRO_FONT_WEIGHT_NORMAL);
     c.cairo_set_font_size(cr, config.font_size_body);
     c.cairo_set_source_rgba(cr, 0.8, 0.8, 0.8, 1.0); // light grey
-    c.cairo_move_to(cr, 14, 44);
+    c.cairo_move_to(cr, 14, 52);
     c.cairo_show_text(cr, body_z.ptr);
 
     const pool = c.wl_shm_create_pool(globals.shm, fd, @intCast(size)) orelse return error.CreatePoolFailed;

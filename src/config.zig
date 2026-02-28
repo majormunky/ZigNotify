@@ -21,6 +21,7 @@ pub const Config = struct {
     default_timeout: i32 = 5000,
     font_size_summary: f64 = 14.0,
     font_size_body: f64 = 12.0,
+    font_size_app_name: f64 = 10.0,
     position: Position = .top_right,
     background_color: Color = .{ .r = 0.18, .g = 0.18, .b = 0.18, .a = 1.0 },
     low_color: Color = .{ .r = 0.5, .g = 0.5, .b = 0.5, .a = 1.0 },
@@ -68,6 +69,8 @@ pub fn load(allocator: std.mem.Allocator) !Config {
             config.font_size_summary = std.fmt.parseFloat(f64, val) catch continue;
         } else if (std.mem.eql(u8, key, "font_size_body")) {
             config.font_size_body = std.fmt.parseFloat(f64, val) catch continue;
+        } else if (std.mem.eql(u8, key, "font_size_app_name")) {
+            config.font_size_app_name = std.fmt.parseFloat(f64, val) catch continue;
         } else if (std.mem.eql(u8, key, "position")) {
             if (std.mem.eql(u8, val, "top_right")) config.position = .top_right else if (std.mem.eql(u8, val, "top_left")) config.position = .top_left else if (std.mem.eql(u8, val, "bottom_right")) config.position = .bottom_right else if (std.mem.eql(u8, val, "bottom_left")) config.position = .bottom_left;
         } else if (std.mem.eql(u8, key, "background_color")) {
