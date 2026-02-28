@@ -198,6 +198,8 @@ pub fn main() !void {
     if (globals.layer_shell == null) return error.NoLayerShell;
     std.log.info("All Wayland globals bound", .{});
 
+    try wayland.setupPointer(globals);
+
     var bus: ?*c.sd_bus = null;
 
     var r = c.sd_bus_open_user(&bus);
@@ -261,19 +263,6 @@ pub fn main() !void {
 
     // main event loop
     while (true) {
-        // check for config file changes
-        if (watcher) |*w| {
-            if (w.check()) {
-                std.log.info("Config changed, reloading...", .{});
-                const new_config = config_mod.load(allocator) catch |err| blk: {
-                    std.log.err("Failed to reload config: {any}", .{err});
-                    break :blk state.config;
-                };
-                state.config = new_config;
-                std.log.info("Config reloaded", .{});
-            }
-        }
-
         r = c.sd_bus_process(bus, null);
         if (r < 0) {
             std.log.err("Bus process error: {d}", .{r});
@@ -282,10 +271,6 @@ pub fn main() !void {
         if (r > 0) continue;
 
         checkExpiry();
-
-        // dispatch any pending wayland events
-        _ = wayland.c.wl_display_dispatch_pending(state.display);
-        _ = wayland.c.wl_display_flush(state.display);
 
         // Process pending notifications
         if (state_mod.global_state) |st| {
@@ -305,6 +290,24 @@ pub fn main() !void {
                     st.addNotification(p.id, p.timeout_ms, p.urgency, surf);
                     sl.* = null;
                 }
+            }
+
+            _ = wayland.c.wl_display_prepare_read(st.display);
+            _ = wayland.c.wl_display_read_events(st.display);
+            _ = wayland.c.wl_display_dispatch_pending(st.display);
+            _ = wayland.c.wl_display_flush(st.display);
+        }
+
+        // check for config file changes
+        if (watcher) |*w| {
+            if (w.check()) {
+                std.log.info("Config changed, reloading...", .{});
+                const new_config = config_mod.load(allocator) catch |err| blk: {
+                    std.log.err("Failed to reload config: {any}", .{err});
+                    break :blk state.config;
+                };
+                state.config = new_config;
+                std.log.info("Config reloaded", .{});
             }
         }
 

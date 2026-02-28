@@ -8,10 +8,15 @@ pub const c = @cImport({
 const posix = std.posix;
 const state_mod = @import("state.zig");
 
+var g_pointer_x: f64 = 0;
+var g_pointer_y: f64 = 0;
+var g_clicked_surface: ?*c.wl_surface = null;
+
 pub const Globals = struct {
     compositor: ?*c.wl_compositor = null,
     shm: ?*c.wl_shm = null,
     layer_shell: ?*c.zwlr_layer_shell_v1 = null,
+    seat: ?*c.wl_seat = null,
 };
 
 pub const Surface = struct {
@@ -21,6 +26,108 @@ pub const Surface = struct {
     height: u32,
     configured: bool,
 };
+
+// Pointer handling
+fn pointerEnter(
+    _: ?*anyopaque,
+    _: ?*c.wl_pointer,
+    _: u32,
+    surface: ?*c.wl_surface,
+    _: c.wl_fixed_t,
+    _: c.wl_fixed_t,
+) callconv(.c) void {
+    g_clicked_surface = surface;
+}
+
+fn pointerLeave(
+    _: ?*anyopaque,
+    _: ?*c.wl_pointer,
+    _: u32,
+    _: ?*c.wl_surface,
+) callconv(.c) void {
+    g_clicked_surface = null;
+}
+
+fn pointerMotion(
+    _: ?*anyopaque,
+    _: ?*c.wl_pointer,
+    _: u32,
+    x: c.wl_fixed_t,
+    y: c.wl_fixed_t,
+) callconv(.c) void {
+    g_pointer_x = c.wl_fixed_to_double(x);
+    g_pointer_y = c.wl_fixed_to_double(y);
+}
+
+fn pointerButton(
+    _: ?*anyopaque,
+    _: ?*c.wl_pointer,
+    _: u32,
+    _: u32,
+    button: u32,
+    state: u32,
+) callconv(.c) void {
+    // button 272 = left click, state 1 = pressed
+    if (button == 272 and state == 1) {
+        if (g_clicked_surface) |surf| {
+            dismissSurface(surf);
+        }
+    }
+}
+
+fn pointerAxis(
+    _: ?*anyopaque,
+    _: ?*c.wl_pointer,
+    _: u32,
+    _: u32,
+    _: c.wl_fixed_t,
+) callconv(.c) void {}
+
+const pointer_listener = c.wl_pointer_listener{
+    .enter = pointerEnter,
+    .leave = pointerLeave,
+    .motion = pointerMotion,
+    .button = pointerButton,
+    .axis = pointerAxis,
+};
+
+pub fn setupPointer(globals: Globals) !void {
+    const seat = globals.seat orelse return error.NoSeat;
+    const pointer = c.wl_seat_get_pointer(seat) orelse return error.NoPointer;
+    _ = c.wl_pointer_add_listener(pointer, &pointer_listener, null);
+    std.log.info("Pointer listener setup", .{});
+}
+
+pub fn dismissSurface(surf: *c.wl_surface) void {
+    const state = @import("state.zig").global_state orelse return;
+    for (&state.active) |*slot| {
+        if (slot.*) |*n| {
+            if (n.surface.surface == surf) {
+                const id = n.id;
+                destroySurface(&n.surface);
+                _ = c.wl_display_flush(state.display);
+                slot.* = null;
+                state.repositionAll();
+
+                std.log.info("Notification {d} dismissed by click", .{id});
+
+                // emit notificationclosed signal via state bus
+                const sd_bus_c = @cImport(@cInclude("systemd/sd-bus.h"));
+                const sd_bus: *sd_bus_c.sd_bus = @ptrCast(@alignCast(state.bus));
+                _ = sd_bus_c.sd_bus_emit_signal(
+                    sd_bus,
+                    "/org/freedesktop/Notifications",
+                    "org.freedesktop.Notifications",
+                    "NotificationClosed",
+                    "uu",
+                    id,
+                    @as(u32, 2), // dismissed by user
+                );
+                return;
+            }
+        }
+    }
+}
 
 pub fn clearSurface(s: *Surface) void {
     c.wl_surface_attach(s.surface, null, 0, 0);
@@ -239,6 +346,14 @@ fn registryListener(
             1,
         ));
         std.log.info("Layer shell bound!", .{});
+    } else if (std.mem.eql(u8, iface, "wl_seat")) {
+        globals.seat = @ptrCast(c.wl_registry_bind(
+            registry,
+            name,
+            &c.wl_seat_interface,
+            1,
+        ));
+        std.log.info("Seat bound!", .{});
     }
 }
 
