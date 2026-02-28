@@ -6,6 +6,7 @@ const c = @cImport({
 });
 const wayland = @import("wayland.zig");
 const state_mod = @import("state.zig");
+const config_mod = @import("config.zig");
 
 var next_notification_id: u32 = 1;
 
@@ -182,6 +183,10 @@ fn checkExpiry() void {
 }
 
 pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
     // wayland connect
     const display = try wayland.connect();
     defer wayland.disconnect(display);
@@ -201,7 +206,9 @@ pub fn main() !void {
     }
     defer _ = c.sd_bus_unref(bus);
 
-    var state = state_mod.State.init(display, globals, bus.?);
+    const config = try config_mod.load(allocator);
+
+    var state = state_mod.State.init(display, globals, bus.?, config);
     state_mod.global_state = &state;
 
     std.log.info("Connected to session bus!", .{});
@@ -257,7 +264,7 @@ pub fn main() !void {
             for (&st.pending) |*sl| {
                 if (sl.*) |p| {
                     const y_offset = st.count() * 110;
-                    const surf = wayland.createSurface(st.display, st.globals, @intCast(y_offset)) catch continue;
+                    const surf = wayland.createSurface(st.display, st.globals, @intCast(y_offset), st.config) catch continue;
                     wayland.drawSurface(
                         st.display,
                         st.globals,
@@ -265,6 +272,7 @@ pub fn main() !void {
                         p.summary[0..p.summary_len],
                         p.body[0..p.body_len],
                         p.urgency,
+                        st.config,
                     ) catch continue;
                     st.addNotification(p.id, p.timeout_ms, p.urgency, surf);
                     sl.* = null;

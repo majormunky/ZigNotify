@@ -28,7 +28,7 @@ pub fn clearSurface(s: *Surface) void {
     s.configured = false;
 }
 
-pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summary: []const u8, body: []const u8, urgency: state_mod.Urgency) !void {
+pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summary: []const u8, body: []const u8, urgency: state_mod.Urgency, config: @import("config.zig").Config) !void {
     const width = s.width;
     const height = s.height;
     const stride = width * 4;
@@ -67,15 +67,18 @@ pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summar
     defer c.cairo_destroy(cr);
 
     // draw background
-    c.cairo_set_source_rgba(cr, 0.18, 0.18, 0.18, 1.0); // dark gray
+    const bg = config.background_color;
+    c.cairo_set_source_rgba(cr, bg.r, bg.g, bg.b, bg.a); // dark gray
     c.cairo_paint(cr);
 
     // accent color based on urgency
-    switch (urgency) {
-        .low => c.cairo_set_source_rgba(cr, 0.5, 0.5, 0.5, 1.0),
-        .normal => c.cairo_set_source_rgba(cr, 0.27, 0.52, 0.95, 1.0),
-        .critical => c.cairo_set_source_rgba(cr, 0.9, 0.2, 0.2, 1.0),
-    }
+    const accent = switch (urgency) {
+        .low => config.low_color,
+        .normal => config.normal_color,
+        .critical => config.critical_color,
+    };
+
+    c.cairo_set_source_rgba(cr, accent.r, accent.g, accent.b, accent.a);
 
     // draw a colored left border accent
     c.cairo_rectangle(cr, 0, 0, 4, @floatFromInt(height));
@@ -91,13 +94,13 @@ pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summar
     // draw summary text
     c.cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 1.0); // white
     c.cairo_select_font_face(cr, "Sans", c.CAIRO_FONT_SLANT_NORMAL, c.CAIRO_FONT_WEIGHT_BOLD);
-    c.cairo_set_font_size(cr, 14.0);
+    c.cairo_set_font_size(cr, config.font_size_summary);
     c.cairo_move_to(cr, 14, 22);
     c.cairo_show_text(cr, summary_z.ptr);
 
     // draw body text
     c.cairo_select_font_face(cr, "Sans", c.CAIRO_FONT_SLANT_NORMAL, c.CAIRO_FONT_WEIGHT_NORMAL);
-    c.cairo_set_font_size(cr, 12.0);
+    c.cairo_set_font_size(cr, config.font_size_body);
     c.cairo_set_source_rgba(cr, 0.8, 0.8, 0.8, 1.0); // light grey
     c.cairo_move_to(cr, 14, 44);
     c.cairo_show_text(cr, body_z.ptr);
@@ -124,7 +127,7 @@ pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summar
     std.log.info("Surface Drawn!", .{});
 }
 
-pub fn createSurface(display: *c.wl_display, globals: Globals, y_offset: u32) !Surface {
+pub fn createSurface(display: *c.wl_display, globals: Globals, y_offset: u32, config: @import("config.zig").Config) !Surface {
     // create a base wayland surface
     const surface = c.wl_compositor_create_surface(globals.compositor) orelse
         return error.CreateSurfaceFailed;
@@ -132,15 +135,23 @@ pub fn createSurface(display: *c.wl_display, globals: Globals, y_offset: u32) !S
     // Wrap it in a layer shell surface
     const layer_surface = c.zwlr_layer_shell_v1_get_layer_surface(globals.layer_shell, surface, null, c.ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "notifications") orelse return error.CreateLayerSurfaceFailed;
 
-    const width: u32 = 300;
-    const height: u32 = 100;
-    const margin: u32 = 10;
+    const width: u32 = config.width;
+    const height: u32 = config.height;
+    const margin: u32 = config.margin;
 
     // configure the layer surface
     c.zwlr_layer_surface_v1_set_size(layer_surface, width, height);
+
+    const anchor = switch (config.position) {
+        .top_right => c.ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | c.ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT,
+        .top_left => c.ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | c.ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT,
+        .bottom_right => c.ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM | c.ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT,
+        .bottom_left => c.ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM | c.ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT,
+    };
+
     c.zwlr_layer_surface_v1_set_anchor(
         layer_surface,
-        c.ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | c.ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT,
+        @intCast(anchor),
     );
     c.zwlr_layer_surface_v1_set_margin(layer_surface, @intCast(margin + y_offset), 10, 0, 0);
 
@@ -162,9 +173,8 @@ pub fn createSurface(display: *c.wl_display, globals: Globals, y_offset: u32) !S
     return s;
 }
 
-pub fn repositionSurface(display: *c.wl_display, s: *Surface, y_offset: u32) void {
-    const margin: u32 = 10;
-    c.zwlr_layer_surface_v1_set_margin(s.layer_surface, @intCast(margin + y_offset), margin, 0, 0);
+pub fn repositionSurface(display: *c.wl_display, s: *Surface, y_offset: u32, config: @import("config.zig").Config) void {
+    c.zwlr_layer_surface_v1_set_margin(s.layer_surface, @intCast(config.margin + y_offset), @intCast(config.margin), 0, 0);
     c.wl_surface_commit(s.surface);
     _ = c.wl_display_roundtrip(display);
 }

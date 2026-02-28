@@ -1,5 +1,6 @@
 const std = @import("std");
 const wayland = @import("wayland.zig");
+const config_mod = @import("config.zig");
 
 pub const MAX_NOTIFICATIONS = 10;
 
@@ -33,14 +34,16 @@ pub const State = struct {
     active: [MAX_NOTIFICATIONS]?ActiveNotification,
     pending: [MAX_NOTIFICATIONS]?PendingNotification,
     bus: *anyopaque,
+    config: config_mod.Config,
 
-    pub fn init(display: *wayland.c.wl_display, globals: wayland.Globals, bus: *anyopaque) State {
+    pub fn init(display: *wayland.c.wl_display, globals: wayland.Globals, bus: *anyopaque, config: config_mod.Config) State {
         return .{
             .display = display,
             .globals = globals,
             .active = [_]?ActiveNotification{null} ** MAX_NOTIFICATIONS,
             .pending = [_]?PendingNotification{null} ** MAX_NOTIFICATIONS,
             .bus = bus,
+            .config = config,
         };
     }
 
@@ -104,8 +107,8 @@ pub const State = struct {
         var index: u32 = 0;
         for (&self.active) |*slot| {
             if (slot.*) |*n| {
-                const y_offset = index * 110;
-                wayland.repositionSurface(self.display, &n.surface, y_offset);
+                const y_offset = index * (self.config.height + self.config.margin);
+                wayland.repositionSurface(self.display, &n.surface, y_offset, self.config);
                 index += 1;
             }
         }
