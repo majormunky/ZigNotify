@@ -7,6 +7,7 @@ const c = @cImport({
 const wayland = @import("wayland.zig");
 const state_mod = @import("state.zig");
 const config_mod = @import("config.zig");
+const inotify_mod = @import("inotify.zig");
 
 var next_notification_id: u32 = 1;
 
@@ -208,6 +209,19 @@ pub fn main() !void {
 
     const config = try config_mod.load(allocator);
 
+    const home = std.posix.getenv("HOME") orelse "";
+
+    const config_path_slice = try std.fmt.allocPrint(allocator, "{s}/.config/zignotify/config", .{home});
+    defer allocator.free(config_path_slice);
+    const config_path = try allocator.dupeZ(u8, config_path_slice);
+    defer allocator.free(config_path);
+
+    var watcher = inotify_mod.Watcher.init(config_path) catch |err| blk: {
+        std.log.warn("Could not watch config file: {any}", .{err});
+        break :blk null;
+    };
+    defer if (watcher) |*w| w.deinit();
+
     var state = state_mod.State.init(display, globals, bus.?, config);
     state_mod.global_state = &state;
 
@@ -245,7 +259,21 @@ pub fn main() !void {
 
     std.log.info("Listening for notifications...", .{});
 
+    // main event loop
     while (true) {
+        // check for config file changes
+        if (watcher) |*w| {
+            if (w.check()) {
+                std.log.info("Config changed, reloading...", .{});
+                const new_config = config_mod.load(allocator) catch |err| blk: {
+                    std.log.err("Failed to reload config: {any}", .{err});
+                    break :blk state.config;
+                };
+                state.config = new_config;
+                std.log.info("Config reloaded", .{});
+            }
+        }
+
         r = c.sd_bus_process(bus, null);
         if (r < 0) {
             std.log.err("Bus process error: {d}", .{r});
