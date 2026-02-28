@@ -176,7 +176,11 @@ pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summar
     // draw background
     const bg = config.background_color;
     c.cairo_set_source_rgba(cr, bg.r, bg.g, bg.b, bg.a); // dark gray
-    c.cairo_paint(cr);
+    roundedRect(cr, 0, 0, @floatFromInt(width), @floatFromInt(height), config.corner_radius);
+    c.cairo_fill(cr);
+
+    roundedRect(cr, 0, 0, @floatFromInt(width), @floatFromInt(height), config.corner_radius);
+    c.cairo_clip(cr);
 
     // accent color based on urgency
     const accent = switch (urgency) {
@@ -399,4 +403,13 @@ pub fn connect() !*c.wl_display {
 
 pub fn disconnect(display: *c.wl_display) void {
     c.wl_display_disconnect(display);
+}
+
+fn roundedRect(cr: ?*c.cairo_t, x: f64, y: f64, width: f64, height: f64, radius: f64) void {
+    c.cairo_new_path(cr);
+    c.cairo_arc(cr, x + width - radius, y + radius, radius, -std.math.pi / 2.0, 0.0);
+    c.cairo_arc(cr, x + width - radius, y + height - radius, radius, 0.0, std.math.pi / 2.0);
+    c.cairo_arc(cr, x + radius, y + height - radius, radius, std.math.pi / 2.0, std.math.pi);
+    c.cairo_arc(cr, x + radius, y + radius, radius, std.math.pi, 3.0 * std.math.pi / 2.0);
+    c.cairo_close_path(cr);
 }
