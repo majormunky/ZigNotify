@@ -70,6 +70,7 @@ export fn handle_notify(
     r = c.sd_bus_message_skip(msg, "as");
     if (r < 0) return r;
 
+    var image_path: [*c]const u8 = null;
     var urgency: state_mod.Urgency = .normal;
     r = c.sd_bus_message_enter_container(msg, 'a', "{sv}");
     if (r > 0) {
@@ -84,6 +85,10 @@ export fn handle_notify(
                 _ = c.sd_bus_message_read_basic(msg, 'y', @ptrCast(&u));
                 urgency = @enumFromInt(@min(u, 2));
                 _ = c.sd_bus_message_exit_container(msg);
+            } else if (std.mem.eql(u8, key_str, "image-path") or std.mem.eql(u8, key_str, "image_path")) {
+                _ = c.sd_bus_message_enter_container(msg, 'v', "s");
+                _ = c.sd_bus_message_read_basic(msg, 's', @ptrCast(&image_path));
+                _ = c.sd_bus_message_exit_container(msg);
             } else {
                 _ = c.sd_bus_message_skip(msg, "v");
             }
@@ -91,6 +96,13 @@ export fn handle_notify(
         }
         _ = c.sd_bus_message_exit_container(msg);
     }
+
+    const icon_str = if (image_path != null)
+        std.mem.sliceTo(image_path, 0)
+    else if (app_icon != null and std.mem.sliceTo(app_icon, 0).len > 0)
+        std.mem.sliceTo(app_icon, 0)
+    else
+        "";
 
     // read timeout
     r = c.sd_bus_message_read(msg, "i", &timeout);
@@ -109,6 +121,7 @@ export fn handle_notify(
             std.mem.sliceTo(summary, 0),
             std.mem.sliceTo(body, 0),
             std.mem.sliceTo(app_name, 0),
+            icon_str,
         );
     }
 
@@ -286,6 +299,7 @@ pub fn main() !void {
                         p.summary[0..p.summary_len],
                         p.body[0..p.body_len],
                         p.app_name[0..p.app_name_len],
+                        p.icon[0..p.icon_len],
                         p.urgency,
                         st.config,
                     ) catch continue;

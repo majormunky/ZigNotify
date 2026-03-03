@@ -4,6 +4,7 @@ pub const c = @cImport({
     @cInclude("xdg-shell.h");
     @cInclude("wlr-layer-shell-unstable-v1.h");
     @cInclude("cairo/cairo.h");
+    @cInclude("gdk-pixbuf/gdk-pixbuf.h");
 });
 const posix = std.posix;
 const state_mod = @import("state.zig");
@@ -98,6 +99,105 @@ pub fn setupPointer(globals: Globals) !void {
     std.log.info("Pointer listener setup", .{});
 }
 
+fn drawIcon(cr: ?*c.cairo_t, icon: []const u8, x: f64, y: f64, size: f64) void {
+    if (icon.len == 0) {
+        std.log.info("drawIcon: icon is empty", .{});
+        return;
+    }
+
+    if (!std.mem.startsWith(u8, icon, "/")) {
+        std.log.info("drawIcon: icon does not start with /", .{});
+        return;
+    }
+
+    var buf: [256:0]u8 = undefined;
+    const icon_z = std.fmt.bufPrintZ(&buf, "{s}", .{icon}) catch return;
+    std.log.info("drawIcon: loading {s}", .{icon_z});
+
+    const pixbuf = c.gdk_pixbuf_new_from_file_at_scale(
+        icon_z.ptr,
+        @intFromFloat(size),
+        @intFromFloat(size),
+        1, // preserve aspect ratio
+        null,
+    );
+    if (pixbuf == null) {
+        std.log.info("drawIcon: pixbuf is null, failed to load image", .{});
+        return;
+    }
+    defer c.g_object_unref(pixbuf);
+    std.log.info("drawIcon: pixbuf loaded successfully", .{});
+
+    // convert to cairo
+    const width = c.gdk_pixbuf_get_width(pixbuf);
+    const height = c.gdk_pixbuf_get_height(pixbuf);
+    const row_stride = c.gdk_pixbuf_get_rowstride(pixbuf);
+    const pixels = c.gdk_pixbuf_get_pixels(pixbuf);
+    const has_alpha = c.gdk_pixbuf_get_has_alpha(pixbuf);
+
+    std.log.info("drawIcon: width: {d}", .{width});
+    std.log.info("drawIcon: height: {d}", .{height});
+    std.log.info("drawIcon: row_stride: {d}", .{row_stride});
+
+    const format = if (has_alpha != 0) c.CAIRO_FORMAT_ARGB32 else c.CAIRO_FORMAT_RGB24;
+
+    std.log.info("drawIcon: format={d}", .{format});
+
+    const icon_surface = c.cairo_image_surface_create(format, width, height);
+    if (icon_surface == null) return;
+    defer c.cairo_surface_destroy(icon_surface);
+
+    const dst = c.cairo_image_surface_get_data(icon_surface);
+    if (dst == null) {
+        std.log.info("drawIcon: dst is null", .{});
+        return;
+    }
+    const dst_stride = c.cairo_image_surface_get_stride(icon_surface);
+
+    std.log.info("drawIcon: _dst_stride={d}", .{dst_stride});
+
+    // convert RGBA (gdk-pixbuf) to ARGB(cairo)
+
+    const src_channels: usize = if (has_alpha != 0) @as(usize, 4) else @as(usize, 3);
+    const h: usize = @intCast(width);
+    const w: usize = @intCast(height);
+    const src_stride: usize = @intCast(row_stride);
+    const d_stride: usize = @intCast(dst_stride);
+
+    var row: usize = 0;
+    while (row < h) : (row += 1) {
+        var col: usize = 0;
+        while (col < w) : (col += 1) {
+            const src_offset = row * src_stride + col * src_channels;
+            const dst_offset = row * d_stride + col * 4;
+
+            const r = pixels[src_offset + 0];
+            const g = pixels[src_offset + 1];
+            const b = pixels[src_offset + 2];
+            const a: u8 = if (has_alpha != 0) pixels[src_offset + 3] else 255;
+
+            // cairo uses premultiplied argb
+            const af: u32 = a;
+            dst[dst_offset + 0] = @intCast((b * af) / 255);
+            dst[dst_offset + 1] = @intCast((g * af) / 255);
+            dst[dst_offset + 2] = @intCast((r * af) / 255);
+            dst[dst_offset + 3] = a;
+        }
+    }
+
+    const center_off = (h / 2) * d_stride + (w / 2) * 4;
+    std.log.info("drawIcon: first pixel ARGB: {d} {d} {d} {d}", .{ dst[center_off + 3], dst[center_off + 2], dst[center_off + 1], dst[center_off + 0] });
+
+    c.cairo_surface_mark_dirty(icon_surface);
+    c.cairo_surface_flush(icon_surface);
+
+    std.log.info("drawIcon: setting source surface", .{});
+    c.cairo_set_source_surface(cr, icon_surface, x, y);
+    c.cairo_rectangle(cr, x, y, @floatFromInt(width), @floatFromInt(height));
+    c.cairo_fill(cr);
+    std.log.info("drawIcon: done", .{});
+}
+
 pub fn dismissSurface(surf: *c.wl_surface) void {
     const state = @import("state.zig").global_state orelse return;
     for (&state.active) |*slot| {
@@ -135,7 +235,7 @@ pub fn clearSurface(s: *Surface) void {
     s.configured = false;
 }
 
-pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summary: []const u8, body: []const u8, app_name: []const u8, urgency: state_mod.Urgency, config: @import("config.zig").Config) !void {
+pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summary: []const u8, body: []const u8, app_name: []const u8, icon: []const u8, urgency: state_mod.Urgency, config: @import("config.zig").Config) !void {
     const width = s.width;
     const height = s.height;
     const stride = width * 4;
@@ -195,6 +295,9 @@ pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summar
     c.cairo_rectangle(cr, 0, 0, 4, @floatFromInt(height));
     c.cairo_fill(cr);
 
+    // draw icon
+    drawIcon(cr, icon, 10, 10, 48);
+
     // summary text
     var summary_buf: [256:0]u8 = undefined;
     const summary_z = std.fmt.bufPrintZ(&summary_buf, "{s}", .{summary}) catch "...";
@@ -205,25 +308,27 @@ pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summar
     var app_name_buf: [256:0]u8 = undefined;
     const app_name_buf_z = std.fmt.bufPrintZ(&app_name_buf, "{s}", .{app_name}) catch "...";
 
+    const text_x: f64 = if (icon.len > 0 and std.mem.startsWith(u8, icon, "/")) 68.0 else 14.0;
+
     // draw app name
     c.cairo_set_source_rgba(cr, 0.6, 0.6, 0.6, 1.0); // white
     c.cairo_select_font_face(cr, "Sans", c.CAIRO_FONT_SLANT_NORMAL, c.CAIRO_FONT_WEIGHT_NORMAL);
     c.cairo_set_font_size(cr, 10.0);
-    c.cairo_move_to(cr, 14, 14);
+    c.cairo_move_to(cr, text_x, 14);
     c.cairo_show_text(cr, app_name_buf_z.ptr);
 
     // draw summary text
     c.cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 1.0); // white
     c.cairo_select_font_face(cr, "Sans", c.CAIRO_FONT_SLANT_NORMAL, c.CAIRO_FONT_WEIGHT_BOLD);
     c.cairo_set_font_size(cr, config.font_size_summary);
-    c.cairo_move_to(cr, 14, 32);
+    c.cairo_move_to(cr, text_x, 32);
     c.cairo_show_text(cr, summary_z.ptr);
 
     // draw body text
     c.cairo_select_font_face(cr, "Sans", c.CAIRO_FONT_SLANT_NORMAL, c.CAIRO_FONT_WEIGHT_NORMAL);
     c.cairo_set_font_size(cr, config.font_size_body);
     c.cairo_set_source_rgba(cr, 0.8, 0.8, 0.8, 1.0); // light grey
-    c.cairo_move_to(cr, 14, 52);
+    c.cairo_move_to(cr, text_x, 52);
     c.cairo_show_text(cr, body_z.ptr);
 
     const pool = c.wl_shm_create_pool(globals.shm, fd, @intCast(size)) orelse return error.CreatePoolFailed;

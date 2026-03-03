@@ -28,6 +28,8 @@ pub const PendingNotification = struct {
     body_len: usize,
     app_name: [256]u8,
     app_name_len: usize,
+    icon: [256]u8,
+    icon_len: usize,
 };
 
 pub const State = struct {
@@ -49,7 +51,7 @@ pub const State = struct {
         };
     }
 
-    pub fn addPending(self: *State, id: u32, timeout_ms: i32, urgency: Urgency, summary: []const u8, body: []const u8, app_name: []const u8) void {
+    pub fn addPending(self: *State, id: u32, timeout_ms: i32, urgency: Urgency, summary: []const u8, body: []const u8, app_name: []const u8, icon: []const u8) void {
         for (&self.pending) |*slot| {
             if (slot.* == null) {
                 var p = PendingNotification{
@@ -62,10 +64,14 @@ pub const State = struct {
                     .body_len = body.len,
                     .app_name = undefined,
                     .app_name_len = app_name.len,
+                    .icon = undefined,
+                    .icon_len = @min(icon.len, 255),
                 };
-                @memcpy(p.summary[0..summary.len], summary);
-                @memcpy(p.body[0..body.len], body);
-                @memcpy(p.app_name[0..app_name.len], app_name);
+                @memcpy(p.summary[0..p.summary_len], summary);
+                @memcpy(p.body[0..p.body_len], body);
+                @memcpy(p.app_name[0..p.app_name_len], app_name);
+                @memcpy(p.icon[0..p.icon_len], icon[0..p.icon_len]);
+
                 slot.* = p;
                 return;
             }
