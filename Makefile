@@ -1,4 +1,4 @@
-.PHONY: build run check-listeners status test-notify install
+.PHONY: build run check-listeners status test-notify install init-config
 
 TARGET := x86_64-linux-gnu
 BINARY := zig-out/bin/zignotify
@@ -21,6 +21,16 @@ status:
 
 test-notify:
 	notify-send "Test" "This is a normal notification"
+
+# Create default config if it doesn't exist
+init-config:
+	@mkdir -p $(CONFIG_DIR)
+	@if [ ! -f $(CONFIG_DIR)/config ]; then \
+		cp config.example $(CONFIG_DIR)/config; \
+		echo "Config created at $(CONFIG_DIR)/config"; \
+	else \
+		echo "Config already exists at $(CONFIG_DIR)/config"; \
+	fi
 
 # Install binary to ~/.local/bin
 install: build
