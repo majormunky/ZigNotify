@@ -114,23 +114,23 @@ jobs:
             Download the tarball, extract it, and run:
             ```bash
             # Install binary
-            cp zignotify ~/.local/bin/zignotify
-            chmod +x ~/.local/bin/zignotify
+            cp munknotify ~/.local/bin/munknotify
+            chmod +x ~/.local/bin/munknotify
 
             # Install systemd service
             mkdir -p ~/.config/systemd/user
-            cp zignotify.service ~/.config/systemd/user/
+            cp munknotify.service ~/.config/systemd/user/
             systemctl --user daemon-reload
-            systemctl --user enable --now zignotify
+            systemctl --user enable --now munknotify
             ```
 
             ## Requirements
             - Wayland compositor with `wlr-layer-shell` support (Hyprland, Sway, river, etc.)
             - x86_64 Linux
           files: |
-            release/zignotify-${{ github.ref_name }}-x86_64-linux.tar.gz
-            release/zignotify
-            release/zignotify.service
+            release/munknotify-${{ github.ref_name }}-x86_64-linux.tar.gz
+            release/munknotify
+            release/munknotify.service
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
         env:

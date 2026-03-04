@@ -246,7 +246,7 @@ pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summar
     }
 
     // create a shared memory file
-    const fd = try posix.memfd_create("zignotify-shm", 0);
+    const fd = try posix.memfd_create("munknotify-shm", 0);
     defer posix.close(fd);
     try posix.ftruncate(fd, size);
 

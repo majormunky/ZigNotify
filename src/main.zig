@@ -1,5 +1,4 @@
 const std = @import("std");
-const zig_notify = @import("zig_notify");
 const c = @cImport({
     @cInclude("systemd/sd-bus.h");
     @cInclude("vtable.h");
@@ -10,6 +9,7 @@ const config_mod = @import("config.zig");
 const inotify_mod = @import("inotify.zig");
 
 var next_notification_id: u32 = 1;
+const version: [*:0]const u8 = "0.1.3";
 
 export fn handle_get_capabilities(
     msg: ?*c.sd_bus_message,
@@ -39,14 +39,7 @@ export fn handle_get_server_information(
     _: ?*c.sd_bus_error,
 ) callconv(.c) c_int {
     std.log.info("GetServerInformation called", .{});
-    const r = c.sd_bus_reply_method_return(
-        msg,
-        "ssss",
-        @as([*:0]const u8, "zignotify"),
-        @as([*:0]const u8, "zignotify"),
-        @as([*:0]const u8, "0.1.0"),
-        @as([*:0]const u8, "1.2"),
-    );
+    const r = c.sd_bus_reply_method_return(msg, "ssss", @as([*:0]const u8, "munknotify"), @as([*:0]const u8, "munknotify"), @as([*:0]const u8, version), @as([*:0]const u8, "1.2"));
     return if (r < 0) r else 1;
 }
 
@@ -227,7 +220,7 @@ pub fn main() !void {
 
     const home = std.posix.getenv("HOME") orelse "";
 
-    const config_path_slice = try std.fmt.allocPrint(allocator, "{s}/.config/zignotify/config", .{home});
+    const config_path_slice = try std.fmt.allocPrint(allocator, "{s}/.config/munknotify/config", .{home});
     defer allocator.free(config_path_slice);
     const config_path = try allocator.dupeZ(u8, config_path_slice);
     defer allocator.free(config_path);
