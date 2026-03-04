@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libsystemd-dev \
+            libwayland-dev \
+            wayland-protocols \
+            wayland-scanner \
+            libcairo2-dev \
+            libgdk-pixbuf-2.0-dev \
+            pkg-config
+
+      - name: Clone wlr-protocols
+        run: |
+          git clone https://gitlab.freedesktop.org/wlroots/wlr-protocols.git /tmp/wlr-protocols
+
+      - name: Generate Wayland protocol bindings
+        run: |
+          # xdg-shell
+          wayland-scanner client-header \
+            /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml \
+            src/xdg-shell.h
+          wayland-scanner private-code \
+            /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml \
+            src/xdg-shell.c
+
+          # wlr-layer-shell
+          wayland-scanner client-header \
+            /tmp/wlr-protocols/unstable/wlr-layer-shell-unstable-v1.xml \
+            src/wlr-layer-shell-unstable-v1.h
+          wayland-scanner private-code \
+            /tmp/wlr-protocols/unstable/wlr-layer-shell-unstable-v1.xml \
+            src/wlr-layer-shell-unstable-v1.c
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: "0.14.0"
+
+      - name: Build
+        run: |
+          zig build -Dtarget=x86_64-linux-gnu -Doptimize=ReleaseSafe
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          cp zig-out/bin/zignotify release/zignotify
+          cp zignotify.service release/zignotify.service
+          cp README.md release/README.md
+
+          # Create example config if it exists
+          if [ -f config.example ]; then
+            cp config.example release/config.example
+          fi
+
+          # Create a tarball
+          tar -czf release/zignotify-${{ github.ref_name }}-x86_64-linux.tar.gz \
+            -C release \
+            zignotify \
+            zignotify.service \
+            README.md
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get commits since last tag
+          PREV_TAG=$(git tag --sort=-creatordate | sed -n '2p')
+          if [ -z "$PREV_TAG" ]; then
+            CHANGES=$(git log --pretty=format:"- %s" HEAD)
+          else
+            CHANGES=$(git log --pretty=format:"- %s" ${PREV_TAG}..HEAD)
+          fi
+          echo "changes<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: zignotify ${{ github.ref_name }}
+          body: |
+            ## Changes
+            ${{ steps.changelog.outputs.changes }}
+
+            ## Installation
+
+            Download the tarball, extract it, and run:
+            ```bash
+            # Install binary
+            cp zignotify ~/.local/bin/zignotify
+            chmod +x ~/.local/bin/zignotify
+
+            # Install systemd service
+            mkdir -p ~/.config/systemd/user
+            cp zignotify.service ~/.config/systemd/user/
+            systemctl --user daemon-reload
+            systemctl --user enable --now zignotify
+            ```
+
+            ## Requirements
+            - Wayland compositor with `wlr-layer-shell` support (Hyprland, Sway, river, etc.)
+            - x86_64 Linux
+          files: |
+            release/zignotify-${{ github.ref_name }}-x86_64-linux.tar.gz
+            release/zignotify
+            release/zignotify.service
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
