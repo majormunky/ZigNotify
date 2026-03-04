@@ -1,15 +1,16 @@
+.DEFAULT_GOAL := status
 .PHONY: build run check-listeners status test-notify install init-config
 
 TARGET := x86_64-linux-gnu
-BINARY := zig-out/bin/zignotify
-INSTALL_PATH := $(HOME)/.local/bin/zignotify
-CONFIG_DIR :=- $(HOME)/.config/zignotify
+BINARY := zig-out/bin/munknotify
+INSTALL_PATH := $(HOME)/.local/bin/munknotify
+CONFIG_DIR := $(HOME)/.config/munknotify
 
 build:
 	zig build -Dtarget=$(TARGET)
 
 run:
-	pkill zignotify 2>/dev/null || true
+	pkill munknotify 2>/dev/null || true
 	zig build run -Dtarget=$(TARGET)
 
 check-listeners:
@@ -17,7 +18,7 @@ check-listeners:
 	@busctl --user list | grep -i notif || echo "Nothing found"
 
 status:
-	@pgrep -a zignotify && echo "" && busctl --user list | grep -i notif || echo "zignotify is not running"
+	@pgrep -a munknotify && echo "" && busctl --user list | grep -i notif || echo "munknotify is not running"
 
 test-notify:
 	notify-send "Test" "This is a normal notification"

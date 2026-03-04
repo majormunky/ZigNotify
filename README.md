@@ -1,4 +1,4 @@
-# zignotify
+# MunkNotify
 
 A lightweight Linux notification daemon written in Zig, implementing the [freedesktop.org Desktop Notifications Specification](https://specifications.freedesktop.org/notification-spec/notification-spec-latest.html) (v1.2).
 
@@ -49,7 +49,7 @@ Requires **Zig 0.14+**.
 
 ```bash
 # Clone the repo
-git clone https://github.com/yourusername/zignotify
+git clone https://github.com/majormunky/munknotify
 cd zignotify
 
 # Generate Wayland protocol bindings
@@ -172,13 +172,13 @@ src/
   xdg-shell.c/h                        — Generated Wayland protocol bindings
   wlr-layer-shell-unstable-v1.c/h      — Generated layer shell bindings
 build.zig           — Zig build script
-zignotify.service   — systemd user service file
+munknotify.service   — systemd user service file
 Makefile            — Useful development commands
 ```
 
 ## How It Works
 
-1. **D-Bus** — zignotify claims `org.freedesktop.Notifications` on the session bus via sd-bus, registering a vtable with the four required methods (`GetCapabilities`, `GetServerInformation`, `Notify`, `CloseNotification`).
+1. **D-Bus** — munknotify claims `org.freedesktop.Notifications` on the session bus via sd-bus, registering a vtable with the four required methods (`GetCapabilities`, `GetServerInformation`, `Notify`, `CloseNotification`).
 
 2. **Notification queue** — incoming `Notify` calls are parsed and placed into a pending queue rather than processed immediately, avoiding conflicts between the D-Bus and Wayland event loops.
 

@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const exe = b.addExecutable(.{
-        .name = "zignotify",
+        .name = "munknotify",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
@@ -29,10 +29,10 @@ pub fn build(b: *std.Build) void {
 
     exe.addObjectFile(.{ .cwd_relative = systemd_lib });
 
-    exe.addObjectFile(.{ .cwd_relative = systemd_lib });
-
+    if (ubuntu_exists) {
+        exe.addLibraryPath(.{ .cwd_relative = "/usr/lib/x86_64-linux-gnu" });
+    }
     exe.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
-    exe.addLibraryPath(.{ .cwd_relative = "/usr/lib/x86_64-linux-gnu" });
 
     exe.linkSystemLibrary("systemd");
     exe.linkSystemLibrary("wayland-client");
@@ -49,6 +49,6 @@ pub fn build(b: *std.Build) void {
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
-    const run_step = b.step("run", "Run zignotify");
+    const run_step = b.step("run", "Run munknotify");
     run_step.dependOn(&run_cmd.step);
 }

@@ -1,18 +1,18 @@
 [Unit]
-Description=zignotify - Zig notification daemon
-Documentation=https://github.com/majormunky/zignotify
+Description=munknotify - Zig notification daemon
+Documentation=https://github.com/majormunky/munknotify
 # Make sure we start after the graphical session is ready
 After=graphical-session.target
 PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/zignotify
+ExecStart=%h/.local/bin/munknotify
 Restart=on-failure
 RestartSec=3
 
 # Make sure the old daemon is gone before starting
-ExecStartPre=/bin/sh -c 'pkill zignotify || true'
+ExecStartPre=/bin/sh -c 'pkill munknotify || true'
 
 # Environment
 Environment=WAYLAND_DISPLAY=wayland-1
