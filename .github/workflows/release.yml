@@ -20,7 +20,7 @@ jobs:
             libsystemd-dev \
             libwayland-dev \
             wayland-protocols \
-            wayland-scanner \
+            libwayland-bin \
             libcairo2-dev \
             libgdk-pixbuf-2.0-dev \
             pkg-config
