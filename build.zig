@@ -13,7 +13,6 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    exe.addObjectFile(.{ .cwd_relative = "/usr/lib/libsystemd.so" });
     exe.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
     exe.addIncludePath(.{ .cwd_relative = "/usr/include" });
     exe.addIncludePath(.{ .cwd_relative = "/usr/include/gdk-pixbuf-2.0" });
@@ -23,6 +22,7 @@ pub fn build(b: *std.Build) void {
     exe.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
     exe.addLibraryPath(.{ .cwd_relative = "/usr/lib/x86_64-linux-gnu" });
 
+    exe.linkSystemLibrary("systemd");
     exe.linkSystemLibrary("wayland-client");
     exe.linkSystemLibrary("cairo");
     exe.linkSystemLibrary("gdk-pixbuf-2.0");
