@@ -20,10 +20,15 @@ jobs:
             libsystemd-dev \
             libwayland-dev \
             wayland-protocols \
-            wayland-scanner \
+            libwayland-bin \
             libcairo2-dev \
             libgdk-pixbuf-2.0-dev \
             pkg-config
+      - name: Fix systemd library path
+        run: |
+          sudo ldconfig
+          pkg-config --libs libsystemd
+          ls /usr/lib/x86_64-linux-gnu/libsystemd*
 
       - name: Clone wlr-protocols
         run: |
@@ -54,6 +59,10 @@ jobs:
 
       - name: Build
         run: |
+          SYSTEMD_LIBS=$(pkg-config --libs libsystemd)
+          SYSTEMD_CFLAGS=$(pkg-config --cflags libsystemd)
+          echo "systemd libs: $SYSTEMD_LIBS"
+          echo "systemd cflags $SYSTEMD_CFLAGS"
           zig build -Dtarget=x86_64-linux-gnu -Doptimize=ReleaseSafe
 
       - name: Prepare release assets

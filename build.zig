@@ -13,12 +13,28 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    exe.addObjectFile(.{ .cwd_relative = "/usr/lib/libsystemd.so" });
     exe.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
     exe.addIncludePath(.{ .cwd_relative = "/usr/include" });
     exe.addIncludePath(.{ .cwd_relative = "/usr/include/gdk-pixbuf-2.0" });
     exe.addIncludePath(.{ .cwd_relative = "/usr/include/glib-2.0" });
     exe.addIncludePath(.{ .cwd_relative = "/usr/lib/glib-2.0/include" });
+
+    // Try Ubuntu path first, fall back to Arch path
+    const ubuntu_path = "/usr/lib/x86_64-linux-gnu/libsystemd.so";
+    const arch_path = "/usr/lib/libsystemd.so";
+
+    const ubuntu_exists = if (std.fs.accessAbsolute(ubuntu_path, .{})) |_| true else |_| false;
+
+    const systemd_lib = if (ubuntu_exists) ubuntu_path else arch_path;
+
+    exe.addObjectFile(.{ .cwd_relative = systemd_lib });
+
+    exe.addObjectFile(.{ .cwd_relative = systemd_lib });
+
+    exe.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
+    exe.addLibraryPath(.{ .cwd_relative = "/usr/lib/x86_64-linux-gnu" });
+
+    exe.linkSystemLibrary("systemd");
     exe.linkSystemLibrary("wayland-client");
     exe.linkSystemLibrary("cairo");
     exe.linkSystemLibrary("gdk-pixbuf-2.0");
