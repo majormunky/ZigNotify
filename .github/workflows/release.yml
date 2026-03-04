@@ -59,7 +59,7 @@ jobs:
 
       - name: Build
         run: |
-          SYSTEMD_LIBS=$(pkg-config) --libs libsystemd)
+          SYSTEMD_LIBS=$(pkg-config --libs libsystemd)
           SYSTEMD_CFLAGS=$(pkg-config --cflags libsystemd)
           echo "systemd libs: $SYSTEMD_LIBS"
           echo "systemd cflags $SYSTEMD_CFLAGS"
