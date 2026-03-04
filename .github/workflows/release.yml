@@ -71,8 +71,8 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release
-          cp zig-out/bin/zignotify release/zignotify
-          cp zignotify.service release/zignotify.service
+          cp zig-out/bin/munknotify release/munknotify
+          cp munknotify.service release/munknotify.service
           cp README.md release/README.md
 
           # Create example config if it exists
@@ -81,10 +81,10 @@ jobs:
           fi
 
           # Create a tarball
-          tar -czf release/zignotify-${{ github.ref_name }}-x86_64-linux.tar.gz \
+          tar -czf release/munknotify-${{ github.ref_name }}-x86_64-linux.tar.gz \
             -C release \
-            zignotify \
-            zignotify.service \
+            munknotify \
+            munknotify.service \
             README.md
 
       - name: Generate changelog
