@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := status
-.PHONY: build run check-listeners status test-notify install init-config
+.PHONY: build run check-listeners status test-notify install init-config run-tests
 
 TARGET := x86_64-linux-gnu
 BINARY := zig-out/bin/munknotify
@@ -38,3 +38,6 @@ install: build
 	@mkdir -p $(dir $(INSTALL_PATH))
 	cp $(BINARY) $(INSTALL_PATH)
 	@echo "Installed to $(INSTALL_PATH)"
+
+run-tests:
+	@zig build test --summary all

@@ -90,7 +90,7 @@ pub fn load(allocator: std.mem.Allocator) !Config {
     return config;
 }
 
-fn parseColor(val: []const u8) !Color {
+pub fn parseColor(val: []const u8) !Color {
     var parts = std.mem.splitScalar(u8, val, ',');
     const r = try std.fmt.parseFloat(f64, std.mem.trim(u8, parts.next() orelse return error.InvalidColor, " "));
     const g = try std.fmt.parseFloat(f64, std.mem.trim(u8, parts.next() orelse return error.InvalidColor, " "));
@@ -98,4 +98,40 @@ fn parseColor(val: []const u8) !Color {
     const a = try std.fmt.parseFloat(f64, std.mem.trim(u8, parts.next() orelse return error.InvalidColor, " "));
 
     return Color{ .r = r, .g = g, .b = b, .a = a };
+}
+
+// Testing
+const testing = std.testing;
+
+test "parseColor valid input" {
+    const color = try parseColor("0.5, 0.2, 0.8, 1.0");
+    try testing.expectEqual(@as(f64, 0.5), color.r);
+    try testing.expectEqual(@as(f64, 0.2), color.g);
+    try testing.expectEqual(@as(f64, 0.8), color.b);
+    try testing.expectEqual(@as(f64, 1.0), color.a);
+}
+
+test "parseColor no alpha" {
+    try testing.expectError(error.InvalidColor, parseColor("0.5, 0.2, 0.8"));
+}
+
+test "parseColor invalid float" {
+    try testing.expectError(error.InvalidCharacter, parseColor("abc, 0.2, 0.8, 1.0"));
+}
+
+test "default config values" {
+    const config = Config{};
+    try testing.expectEqual(@as(u32, 300), config.width);
+    try testing.expectEqual(@as(u32, 100), config.height);
+    try testing.expectEqual(@as(u32, 10), config.margin);
+    try testing.expectEqual(@as(i32, 5000), config.default_timeout);
+    try testing.expectEqual(Position.top_right, config.position);
+}
+
+test "parseColor background default" {
+    const color = try parseColor("0.18, 0.18, 0.18, 1.0");
+    try testing.expectEqual(@as(f64, 0.18), color.r);
+    try testing.expectEqual(@as(f64, 0.18), color.g);
+    try testing.expectEqual(@as(f64, 0.18), color.b);
+    try testing.expectEqual(@as(f64, 1.0), color.a);
 }
