@@ -28,6 +28,11 @@ pub const Surface = struct {
     configured: bool,
 };
 
+const TextLine = struct {
+    text: [256]u8,
+    len: usize,
+};
+
 // Pointer handling
 fn pointerEnter(
     _: ?*anyopaque,
@@ -97,6 +102,64 @@ pub fn setupPointer(globals: Globals) !void {
     const pointer = c.wl_seat_get_pointer(seat) orelse return error.NoPointer;
     _ = c.wl_pointer_add_listener(pointer, &pointer_listener, null);
     std.log.info("Pointer listener setup", .{});
+}
+
+fn wrapText(cr: ?*c.cairo_t, text: []const u8, max_width: f64) [16]?TextLine {
+    var lines = [_]?TextLine{null} ** 16;
+    var line_index: usize = 0;
+    var current_line: [256]u8 = undefined;
+    var current_len: usize = 0;
+
+    var words = std.mem.splitScalar(u8, text, ' ');
+    while (words.next()) |word| {
+        if (word.len == 0) continue;
+
+        // build test string: current line + space + new word
+        var test_buf: [256:0]u8 = undefined;
+        const test_str = if (current_len == 0)
+            std.fmt.bufPrintZ(&test_buf, "{s}", .{word}) catch continue
+        else
+            std.fmt.bufPrintZ(&test_buf, "{s} {s}", .{ current_line[0..current_len], word }) catch continue;
+
+        // measure
+        var extents: c.cairo_text_extents_t = undefined;
+        c.cairo_text_extents(cr, test_str.ptr, &extents);
+
+        if (extents.width > max_width and current_len > 0) {
+            if (line_index >= 16) break;
+            var line = TextLine{
+                .text = undefined,
+                .len = current_len,
+            };
+            @memcpy(line.text[0..current_len], current_line[0..current_len]);
+            lines[line_index] = line;
+            line_index += 1;
+
+            @memcpy(current_line[0..word.len], word);
+            current_len = word.len;
+        } else {
+            if (current_len == 0) {
+                @memcpy(current_line[0..word.len], word);
+                current_len = word.len;
+            } else {
+                current_line[current_len] = ' ';
+                @memcpy(current_line[current_len + 1 .. current_len + 1 + word.len], word);
+                current_len += 1 + word.len;
+            }
+        }
+    }
+
+    // save the last line
+    if (current_len > 0 and line_index < 16) {
+        var line = TextLine{
+            .text = undefined,
+            .len = current_len,
+        };
+        @memcpy(line.text[0..current_len], current_line[0..current_len]);
+        lines[line_index] = line;
+    }
+
+    return lines;
 }
 
 fn drawIcon(cr: ?*c.cairo_t, icon: []const u8, x: f64, y: f64, size: f64) void {
@@ -235,22 +298,79 @@ pub fn clearSurface(s: *Surface) void {
     s.configured = false;
 }
 
+const MeasuredText = struct {
+    lines: [16]?TextLine,
+    final_height: u32,
+    line_height: f64,
+};
+
+fn measureBody(width: u32, body: []const u8, icon: []const u8, config: @import("config.zig").Config) MeasuredText {
+    const measure_surface = c.cairo_image_surface_create(c.CAIRO_FORMAT_ARGB32, @intCast(width), 100) orelse {
+        return .{ .lines = [_]?TextLine{null} ** 16, .final_height = 100, .line_height = 16.0 };
+    };
+    defer c.cairo_surface_destroy(measure_surface);
+
+    const measure_cr = c.cairo_create(measure_surface) orelse {
+        return .{ .lines = [_]?TextLine{null} ** 16, .final_height = 100, .line_height = 16 };
+    };
+    defer c.cairo_destroy(measure_cr);
+
+    c.cairo_select_font_face(measure_cr, "Sans", c.CAIRO_FONT_SLANT_NORMAL, c.CAIRO_FONT_WEIGHT_NORMAL);
+    c.cairo_set_font_size(measure_cr, config.font_size_body);
+
+    const text_x: f64 = if (icon.len > 0 and std.mem.startsWith(u8, icon, "/")) 68.0 else 14.0;
+    const available_width = @as(f64, @floatFromInt(width)) - text_x - 10.0;
+    const lines = wrapText(measure_cr, body, available_width);
+
+    var line_count: usize = 0;
+    for (lines) |line| {
+        if (line != null) line_count += 1;
+    }
+
+    // calculate size
+    const line_height: f64 = config.font_size_body + 4.0;
+    const topPadding: f64 = 14.0;
+    const appNameHeight: f64 = 16.0;
+    const summaryHeight: f64 = 20.0;
+    const linesHeight: f64 = @as(f64, @floatFromInt(line_count)) * line_height + 10.0;
+    const required_height: u32 = @intFromFloat(topPadding + appNameHeight + summaryHeight + linesHeight);
+
+    return .{
+        .lines = lines,
+        .final_height = required_height,
+        .line_height = line_height,
+    };
+}
+
 pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summary: []const u8, body: []const u8, app_name: []const u8, icon: []const u8, urgency: state_mod.Urgency, config: @import("config.zig").Config) !void {
     const width = s.width;
-    const height = s.height;
-    const stride = width * 4;
-    const size = stride * height;
+
+    // measure
+    const measured = measureBody(width, body, icon, config);
+    const final_height = @max(s.height, measured.final_height);
+    const body_lines = measured.lines;
+    const line_height = measured.line_height;
+
+    // resize if needed
+    if (final_height != s.height) {
+        s.height = final_height;
+        c.zwlr_layer_surface_v1_set_size(s.layer_surface, s.width, s.height);
+        c.wl_surface_commit(s.surface);
+        _ = c.wl_display_roundtrip(display);
+    }
 
     if (!s.configured) {
         reconfigureSurface(display, s);
     }
 
-    // create a shared memory file
+    // allocate buffer
+    const stride = width * 4;
+    const size = stride * final_height;
+
     const fd = try posix.memfd_create("munknotify-shm", 0);
     defer posix.close(fd);
     try posix.ftruncate(fd, size);
 
-    // map it into our address space
     const data = try posix.mmap(
         null,
         size,
@@ -261,11 +381,12 @@ pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summar
     );
     defer posix.munmap(data);
 
+    // draw
     const cairo_surface = c.cairo_image_surface_create_for_data(
         @ptrCast(data.ptr),
         c.CAIRO_FORMAT_ARGB32,
         @intCast(width),
-        @intCast(height),
+        @intCast(final_height),
         @intCast(stride),
     ) orelse return error.CairoSurfaceFailed;
     defer c.cairo_surface_destroy(cairo_surface);
@@ -273,64 +394,63 @@ pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summar
     const cr = c.cairo_create(cairo_surface) orelse return error.CairoCreateFailed;
     defer c.cairo_destroy(cr);
 
-    // draw background
+    // background
     const bg = config.background_color;
-    c.cairo_set_source_rgba(cr, bg.r, bg.g, bg.b, bg.a); // dark gray
-    roundedRect(cr, 0, 0, @floatFromInt(width), @floatFromInt(height), config.corner_radius);
+    c.cairo_set_source_rgba(cr, bg.r, bg.g, bg.b, bg.a);
+    roundedRect(cr, 0, 0, @floatFromInt(width), @floatFromInt(final_height), config.corner_radius);
     c.cairo_fill(cr);
-
-    roundedRect(cr, 0, 0, @floatFromInt(width), @floatFromInt(height), config.corner_radius);
+    roundedRect(cr, 0, 0, @floatFromInt(width), @floatFromInt(final_height), config.corner_radius);
     c.cairo_clip(cr);
 
-    // accent color based on urgency
+    // accent bar
     const accent = switch (urgency) {
         .low => config.low_color,
         .normal => config.normal_color,
         .critical => config.critical_color,
     };
-
     c.cairo_set_source_rgba(cr, accent.r, accent.g, accent.b, accent.a);
-
-    // draw a colored left border accent
-    c.cairo_rectangle(cr, 0, 0, 4, @floatFromInt(height));
+    c.cairo_rectangle(cr, 0, 0, 4, @floatFromInt(final_height));
     c.cairo_fill(cr);
 
-    // draw icon
+    // icon
     drawIcon(cr, icon, 10, 10, 48);
-
-    // summary text
-    var summary_buf: [256:0]u8 = undefined;
-    const summary_z = std.fmt.bufPrintZ(&summary_buf, "{s}", .{summary}) catch "...";
-
-    var body_buf: [256:0]u8 = undefined;
-    const body_z = std.fmt.bufPrintZ(&body_buf, "{s}", .{body}) catch "...";
-
-    var app_name_buf: [256:0]u8 = undefined;
-    const app_name_buf_z = std.fmt.bufPrintZ(&app_name_buf, "{s}", .{app_name}) catch "...";
 
     const text_x: f64 = if (icon.len > 0 and std.mem.startsWith(u8, icon, "/")) 68.0 else 14.0;
 
-    // draw app name
-    c.cairo_set_source_rgba(cr, 0.6, 0.6, 0.6, 1.0); // white
+    // app name
+    var app_name_buf: [256:0]u8 = undefined;
+    const app_name_z = std.fmt.bufPrintZ(&app_name_buf, "{s}", .{app_name}) catch "...";
+    c.cairo_set_source_rgba(cr, 0.6, 0.6, 0.6, 1.0);
     c.cairo_select_font_face(cr, "Sans", c.CAIRO_FONT_SLANT_NORMAL, c.CAIRO_FONT_WEIGHT_NORMAL);
     c.cairo_set_font_size(cr, 10.0);
     c.cairo_move_to(cr, text_x, 14);
-    c.cairo_show_text(cr, app_name_buf_z.ptr);
+    c.cairo_show_text(cr, app_name_z.ptr);
 
-    // draw summary text
-    c.cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 1.0); // white
+    // summary
+    var summary_buf: [256:0]u8 = undefined;
+    const summary_z = std.fmt.bufPrintZ(&summary_buf, "{s}", .{summary}) catch "...";
+    c.cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 1.0);
     c.cairo_select_font_face(cr, "Sans", c.CAIRO_FONT_SLANT_NORMAL, c.CAIRO_FONT_WEIGHT_BOLD);
     c.cairo_set_font_size(cr, config.font_size_summary);
     c.cairo_move_to(cr, text_x, 32);
     c.cairo_show_text(cr, summary_z.ptr);
 
-    // draw body text
+    // body lines
     c.cairo_select_font_face(cr, "Sans", c.CAIRO_FONT_SLANT_NORMAL, c.CAIRO_FONT_WEIGHT_NORMAL);
     c.cairo_set_font_size(cr, config.font_size_body);
-    c.cairo_set_source_rgba(cr, 0.8, 0.8, 0.8, 1.0); // light grey
-    c.cairo_move_to(cr, text_x, 52);
-    c.cairo_show_text(cr, body_z.ptr);
+    c.cairo_set_source_rgba(cr, 0.8, 0.8, 0.8, 1.0);
+    var y_pos: f64 = 52.0;
+    for (body_lines) |maybe_line| {
+        if (maybe_line) |line| {
+            var line_buf: [256:0]u8 = undefined;
+            const line_z = std.fmt.bufPrintZ(&line_buf, "{s}", .{line.text[0..line.len]}) catch continue;
+            c.cairo_move_to(cr, text_x, y_pos);
+            c.cairo_show_text(cr, line_z.ptr);
+            y_pos += line_height;
+        }
+    }
 
+    // commmit to wayland
     const pool = c.wl_shm_create_pool(globals.shm, fd, @intCast(size)) orelse return error.CreatePoolFailed;
     defer c.wl_shm_pool_destroy(pool);
 
@@ -338,15 +458,14 @@ pub fn drawSurface(display: *c.wl_display, globals: Globals, s: *Surface, summar
         pool,
         0,
         @intCast(width),
-        @intCast(height),
+        @intCast(final_height),
         @intCast(stride),
         c.WL_SHM_FORMAT_ARGB8888,
     ) orelse return error.CreateBufferFailed;
     defer c.wl_buffer_destroy(buffer);
 
-    // attach buffer to surface and commit
     c.wl_surface_attach(s.surface, buffer, 0, 0);
-    c.wl_surface_damage(s.surface, 0, 0, @intCast(width), @intCast(height));
+    c.wl_surface_damage(s.surface, 0, 0, @intCast(width), @intCast(final_height));
     c.wl_surface_commit(s.surface);
     _ = c.wl_display_flush(display);
 
