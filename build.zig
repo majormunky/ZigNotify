@@ -20,10 +20,8 @@ pub fn build(b: *std.Build) void {
     exe.addIncludePath(.{ .cwd_relative = "/usr/include/glib-2.0" });
     exe.addIncludePath(.{ .cwd_relative = "/usr/lib/glib-2.0/include" });
 
-    if (exe.rootModuleTarget().os.tag == .linux) {
-        exe.addLibraryPath(.{ .cwd_relative = "/usr/lib/x86_64-linux-gnu" });
-        exe.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
-    }
+    exe.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
+    exe.addLibraryPath(.{ .cwd_relative = "/usr/lib/x86_64-linux-gnu" });
 
     exe.linkSystemLibrary("wayland-client");
     exe.linkSystemLibrary("cairo");
