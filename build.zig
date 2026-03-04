@@ -19,6 +19,12 @@ pub fn build(b: *std.Build) void {
     exe.addIncludePath(.{ .cwd_relative = "/usr/include/gdk-pixbuf-2.0" });
     exe.addIncludePath(.{ .cwd_relative = "/usr/include/glib-2.0" });
     exe.addIncludePath(.{ .cwd_relative = "/usr/lib/glib-2.0/include" });
+
+    if (exe.rootModuleTarget().os.tag == .linux) {
+        exe.addLibraryPath(.{ .cwd_relative = "/usr/lib/x86_64-linux-gnu" });
+        exe.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
+    }
+
     exe.linkSystemLibrary("wayland-client");
     exe.linkSystemLibrary("cairo");
     exe.linkSystemLibrary("gdk-pixbuf-2.0");

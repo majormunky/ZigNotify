@@ -24,6 +24,11 @@ jobs:
             libcairo2-dev \
             libgdk-pixbuf-2.0-dev \
             pkg-config
+      - name: Fix systemd library path
+        run: |
+          sudo ldconfig
+          pkg-config --libs libsystemd
+          ls /usr/lib/x86_64-linux-gnu/libsystemd*
 
       - name: Clone wlr-protocols
         run: |
